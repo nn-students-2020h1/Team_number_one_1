@@ -1,0 +1,9 @@
+/start
+Хай
+Как дела?
+Интересно
+/history
+df
+/history
+gchv
+/history
