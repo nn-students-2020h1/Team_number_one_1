@@ -1,6 +1,9 @@
-# Intel Python Course Telegram Bot
+# The number one team represents their bot
 
-This is a repository for Telegram bot that will be developed during Intel Academic Program Python Course.
+This is a repository for Telegram bot that will be developed by first team.
+
+### Now implemented
+1. History (/history) - The output of the last message
 
 ## Set up Python environment
 
