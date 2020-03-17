@@ -6,7 +6,7 @@ import logging
 from setup import PROXY, TOKEN
 from telegram import Bot, Update
 from telegram.ext import CallbackContext, CommandHandler, Filters, MessageHandler, Updater
-from itertools import islice
+import logging
 
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -56,6 +56,19 @@ def log_action(func):
         func(*args, **kwargs)
     return inner
 
+
+"""Логи ошибок"""
+def errors(func):
+    def inner(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except:
+            logger = logging.getLogger()
+            logger.warning()
+            logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+    return inner
+
+
 @log_action
 def history(update: Update, context: CallbackContext):
     history_list = []
@@ -100,7 +113,9 @@ def chat_help(update: Update, context: CallbackContext):
 def echo(update: Update, context: CallbackContext):
     """Echo the user message."""
     update.message.reply_text(update.message.text)
+    print(context.error)
 
+@errors
 @log_action
 def error(update: Update, context: CallbackContext):
     """Log Errors caused by Updates."""
