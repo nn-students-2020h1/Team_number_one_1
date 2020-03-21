@@ -1,13 +1,13 @@
 #!/usr/local/bin/python3
 # -*- coding: utf-8 -*-
 
-import logging
 
 from setup import PROXY, TOKEN
 from telegram import Bot, Update
 from telegram.ext import CallbackContext, CommandHandler, Filters, MessageHandler, Updater
 import logging
-
+import requests
+import json
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
@@ -97,6 +97,18 @@ def history(update: Update, context: CallbackContext):
 
     update.message.reply_text(text + s)
 
+@log_action
+def cat_fact(update: Update, context: CallbackContext):
+    max = 0
+    text = ''
+    r = requests.get('https://cat-fact.herokuapp.com/facts')
+    answer = json.loads(r.text)
+    for i in answer['all']:
+        if i['upvotes'] > max:
+            max = i['upvotes']
+            text = i['text']
+    update.message.reply_text(text)
+
 
 
 @log_action
@@ -133,6 +145,7 @@ def main():
     updater.dispatcher.add_handler(CommandHandler('start', start))
     updater.dispatcher.add_handler(CommandHandler('help', chat_help))
     updater.dispatcher.add_handler(CommandHandler('history', history))
+    updater.dispatcher.add_handler(CommandHandler('cat_fact', cat_fact))
 
     # on noncommand i.e message - echo the message on Telegram
     updater.dispatcher.add_handler(MessageHandler(Filters.text, echo))
