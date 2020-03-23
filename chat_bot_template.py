@@ -1,13 +1,15 @@
 #!/usr/local/bin/python3
 # -*- coding: utf-8 -*-
 
-import logging
 
 from setup import PROXY, TOKEN
 from telegram import Bot, Update
 from telegram.ext import CallbackContext, CommandHandler, Filters, MessageHandler, Updater
 import logging
-
+import requests
+import json
+import csv
+import datetime
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
@@ -17,7 +19,7 @@ logger = logging.getLogger(__name__)
 # Define a few command handlers. These usually take the two arguments update and
 # context. Error handlers also receive the raised TelegramError object in error.
 
-import datetime
+
 
 LOG_ACTIONS = []
 LOG_TIME_MY = [0]
@@ -97,6 +99,49 @@ def history(update: Update, context: CallbackContext):
 
     update.message.reply_text(text + s)
 
+@log_action
+def cat_fact(update: Update, context: CallbackContext):
+    max = 0
+    text = ''
+    r = requests.get('https://cat-fact.herokuapp.com/facts')
+    answer = json.loads(r.text)
+    for i in answer['all']:
+        if i['upvotes'] > max:
+            max = i['upvotes']
+            text = i['text']
+    update.message.reply_text(text)
+
+@log_action
+def corono_stats(update: Update, context: CallbackContext):
+    i = 0;
+    text = ''
+    now = datetime.datetime.now()
+    day = now.day
+    if day < 10:
+        day = f"0{now.day}"
+    month = now.month
+    if month < 10:
+        month = f"0{now.month}"
+
+    r = requests.get(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/{month}-{day}-{now.year}.csv')
+    if r.status_code == 404:
+        day = now.day-1
+        if day < 10:
+            day = f"0{now.day-1}"
+
+        r = requests.get(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/{month}-{day}-{now.year}.csv')
+    text=f"{month}-{day}-{now.year}\n"
+    with open('korona_v.csv', 'w', newline='') as csvfile:
+        csvfile.write(r.text)
+    with open('korona_v.csv', 'r') as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            if i > 4:
+                break
+            if row['Province/State'] != '':
+                text += f"Province: {row['Province/State']} -> Confirmed: {row['Confirmed']}\n"
+                i += 1
+    update.message.reply_text(text)
 
 
 @log_action
@@ -133,6 +178,8 @@ def main():
     updater.dispatcher.add_handler(CommandHandler('start', start))
     updater.dispatcher.add_handler(CommandHandler('help', chat_help))
     updater.dispatcher.add_handler(CommandHandler('history', history))
+    updater.dispatcher.add_handler(CommandHandler('cat_fact', cat_fact))
+    updater.dispatcher.add_handler(CommandHandler('corono_stats', corono_stats))
 
     # on noncommand i.e message - echo the message on Telegram
     updater.dispatcher.add_handler(MessageHandler(Filters.text, echo))
