@@ -10,6 +10,11 @@ import requests
 import json
 import csv
 import datetime
+import time
+
+from itertools import islice
+from operator import sub
+
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
@@ -131,6 +136,9 @@ def corono_stats(update: Update, context: CallbackContext):
 
         r = requests.get(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/{month}-{day}-{now.year}.csv')
     text=f"{month}-{day}-{now.year}\n"
+
+    print("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/03-26-2020.csv")
+    print(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/{month}-{day}-{now.year}.csv')
     with open('korona_v.csv', 'w', newline='') as csvfile:
         csvfile.write(r.text)
     with open('korona_v.csv', 'r') as file:
@@ -138,10 +146,96 @@ def corono_stats(update: Update, context: CallbackContext):
         for row in reader:
             if i > 4:
                 break
-            if row['Province/State'] != '':
-                text += f"Province: {row['Province/State']} -> Confirmed: {row['Confirmed']}\n"
+            if row['Province_State'] != '':
+                text += f"Province: {row['Province_State']} -> Confirmed: {row['Confirmed']}\n"
                 i += 1
     update.message.reply_text(text)
+
+def request_covid(i=0):
+    while True:
+        data = (datetime.date.today() - datetime.timedelta(days=i)).strftime("%m-%d-%Y")
+
+        r = requests.get(
+            f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/{data}.csv')
+
+        if r.status_code == 200:
+            break
+        i += 1
+    return data, r
+
+def covid_file(data, r, parametr):
+    while True:
+        try:
+            with open(f'corono_stats/{data}.csv', 'r', encoding='utf-8') as file:
+                act_cor = CovidAnalitic(csv.DictReader(file))
+                curent = act_cor.top_covid(parametr, -1)
+
+                break
+
+
+        except:
+            with open(f'corono_stats/{data}.csv', 'w', encoding='utf-8') as file:
+                file.write(r.text)
+    return curent
+
+
+class CovidAnalitic:
+    def __init__(self, reader):
+        self.reader = reader  # reader = csv.DictReader(file)
+
+    def top_covid(self, parametr='Active', n=5):
+        list = []
+        for row in self.reader:
+            if not row[parametr].isdigit():
+                continue
+            list.append({'Country': row['Country_Region'], 'Parametr': int(row[parametr])})
+        list.sort(key=lambda d: d['Parametr'], reverse=True)
+        if n != -1:
+            top = list[:n]
+        else:
+            top = list
+        return top
+
+
+    @staticmethod
+    def contrast_day(parametr):
+        day, r = request_covid()
+        yesterday, ry = request_covid(2)
+        curent = covid_file(day, r, parametr)
+        print("!!!")
+        per = covid_file(yesterday, ry, parametr)
+        new = []
+        for i in range(len(per)):
+            new.append(
+                {'Country': per[i]['Country'],
+                 'Parametr': curent[i]['Parametr'] - per[i]['Parametr']
+                 })
+
+        return new
+
+
+@log_action
+def corona_details(update: Update, context: CallbackContext):
+    new_active = CovidAnalitic.contrast_day('Active')
+    new_death = CovidAnalitic.contrast_day('Deaths')
+    new_recovered = CovidAnalitic.contrast_day('Recovered')
+
+    text = 'Мировая статистика за последние сутки:\n'
+
+    sum = 0
+    for i in new_active:
+        sum += i['Parametr']
+    text += 'Новые заражённые: {}\n'.format(sum)
+    sum = 0
+    for i in new_death:
+        sum += i['Parametr']
+    text += 'Смертей: {}\n'.format(sum)
+    sum = 0
+    for i in new_recovered:
+        sum += i['Parametr']
+    text += 'Выздоровевших: {}\n'.format(sum)
+    update.message.reply_text(text)
+
 
 
 @log_action
@@ -180,6 +274,7 @@ def main():
     updater.dispatcher.add_handler(CommandHandler('history', history))
     updater.dispatcher.add_handler(CommandHandler('cat_fact', cat_fact))
     updater.dispatcher.add_handler(CommandHandler('corono_stats', corono_stats))
+    updater.dispatcher.add_handler(CommandHandler('corona_stats_dynamic', corona_details))
 
     # on noncommand i.e message - echo the message on Telegram
     updater.dispatcher.add_handler(MessageHandler(Filters.text, echo))
