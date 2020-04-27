@@ -10,6 +10,12 @@ import requests
 import json
 import csv
 import datetime
+import time
+import sqlite3
+
+from itertools import islice
+from operator import sub
+
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
@@ -24,6 +30,35 @@ logger = logging.getLogger(__name__)
 LOG_ACTIONS = []
 LOG_TIME_MY = [0]
 count = [-1]
+
+#Подкллючение базы данных
+
+__connection = None
+def get_connect():
+    global __connection
+    if __connection is None:
+        __connection = sqlite3.connect('base.db')
+    return __connection
+
+def init_db(force: bool = False):
+    conn = get_connect()
+    c = conn.cursor()
+    if force:
+        c.execute('DROP TABLE IF EXISTS corono')
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS corono (
+            active     INTEGER NOT NULL
+            death      INTEGER NOT NULL,
+            recovered  INTEGER NOT NULL
+        )
+    """)
+    conn.commit()
+
+def add_message(active: int , death: int, recovered: int):
+    conn = get_connect()
+    c = conn.cursor()
+    c.execute('INSERT INTO corono (active, death, recovered) VALUES (?, ?, &)', (active, death, recovered))
+    conn.commit()
 
 """['message']['chat']['first_name']"""
 def log_action(func):
@@ -131,6 +166,9 @@ def corono_stats(update: Update, context: CallbackContext):
 
         r = requests.get(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/{month}-{day}-{now.year}.csv')
     text=f"{month}-{day}-{now.year}\n"
+
+    print("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/03-26-2020.csv")
+    print(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/{month}-{day}-{now.year}.csv')
     with open('korona_v.csv', 'w', newline='') as csvfile:
         csvfile.write(r.text)
     with open('korona_v.csv', 'r') as file:
@@ -138,10 +176,99 @@ def corono_stats(update: Update, context: CallbackContext):
         for row in reader:
             if i > 4:
                 break
-            if row['Province/State'] != '':
-                text += f"Province: {row['Province/State']} -> Confirmed: {row['Confirmed']}\n"
+            if row['Province_State'] != '':
+                text += f"Province: {row['Province_State']} -> Confirmed: {row['Confirmed']}\n"
                 i += 1
     update.message.reply_text(text)
+
+def request_covid(i=0):
+    while True:
+        data = (datetime.date.today() - datetime.timedelta(days=i)).strftime("%m-%d-%Y")
+
+        r = requests.get(
+            f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/{data}.csv')
+
+        if r.status_code == 200:
+            break
+        i += 1
+    return data, r
+
+def covid_file(data, r, parametr):
+    while True:
+        try:
+            with open(f'corono_stats/{data}.csv', 'r', encoding='utf-8') as file:
+                act_cor = CovidAnalitic(csv.DictReader(file))
+                curent = act_cor.top_covid(parametr, -1)
+
+                break
+
+
+        except:
+            with open(f'corono_stats/{data}.csv', 'w', encoding='utf-8') as file:
+                file.write(r.text)
+    return curent
+
+
+class CovidAnalitic:
+    def __init__(self, reader):
+        self.reader = reader  # reader = csv.DictReader(file)
+
+    def top_covid(self, parametr='Active', n=5):
+        list = []
+        for row in self.reader:
+            if not row[parametr].isdigit():
+                continue
+            list.append({'Country': row['Country_Region'], 'Parametr': int(row[parametr])})
+        list.sort(key=lambda d: d['Parametr'], reverse=True)
+        if n != -1:
+            top = list[:n]
+        else:
+            top = list
+        return top
+
+
+    @staticmethod
+    def contrast_day(parametr):
+        day, r = request_covid()
+        yesterday, ry = request_covid(2)
+        curent = covid_file(day, r, parametr)
+        print("!!!")
+        per = covid_file(yesterday, ry, parametr)
+        new = []
+        for i in range(len(per)):
+            new.append(
+                {'Country': per[i]['Country'],
+                 'Parametr': curent[i]['Parametr'] - per[i]['Parametr']
+                 })
+
+        return new
+
+
+@log_action
+def corona_details(update: Update, context: CallbackContext):
+    new_active = CovidAnalitic.contrast_day('Active')
+    new_death = CovidAnalitic.contrast_day('Deaths')
+    new_recovered = CovidAnalitic.contrast_day('Recovered')
+
+    init_db()
+    add_message(active=new_active,death=new_death,recovered=new_recovered)
+
+    text = 'Мировая статистика за последние сутки:\n'
+
+    sum = 0
+    for i in new_active:
+        sum += i['Parametr']
+    text += 'Новые заражённые: {}\n'.format(sum)
+    sum = 0
+    for i in new_death:
+        sum += i['Parametr']
+    text += 'Смертей: {}\n'.format(sum)
+    sum = 0
+    for i in new_recovered:
+        sum += i['Parametr']
+    text += 'Выздоровевших: {}\n'.format(sum)
+    update.message.reply_text(text)
+
 
 
 @log_action
@@ -168,11 +295,23 @@ def error(update: Update, context: CallbackContext):
 
 
 def main():
-    bot = Bot(
-        token=TOKEN,
-        base_url=PROXY,  # delete it if connection via VPN
-    )
-    updater = Updater(bot=bot, use_context=True)
+    # bot = Bot(
+    #     token=TOKEN,
+    #     base_url=PROXY,  # delete it if connection via VPN
+    # )
+    # updater = Updater(bot=bot, use_context=True)
+
+    # Connect via socks proxy
+    REQUEST_KWARGS = {
+        'proxy_url': PROXY,
+        # Optional, if you need authentication:
+        # 'urllib3_proxy_kwargs': {
+        #     'username': 'name',
+        #     'password': 'passwd',
+        # }
+    }
+
+    updater = Updater(TOKEN, request_kwargs=REQUEST_KWARGS, use_context=True)
 
     # on different commands - answer in Telegram
     updater.dispatcher.add_handler(CommandHandler('start', start))
@@ -180,6 +319,7 @@ def main():
     updater.dispatcher.add_handler(CommandHandler('history', history))
     updater.dispatcher.add_handler(CommandHandler('cat_fact', cat_fact))
     updater.dispatcher.add_handler(CommandHandler('corono_stats', corono_stats))
+    updater.dispatcher.add_handler(CommandHandler('corona_stats_dynamic', corona_details))
 
     # on noncommand i.e message - echo the message on Telegram
     updater.dispatcher.add_handler(MessageHandler(Filters.text, echo))
