@@ -1,1 +1,10 @@
+
+#python-telegram-bot
+#python-telegram-bot[socks]
+
 python-telegram-bot
+requests
+datetime
+pyowm
+matplotlib
+bs4
