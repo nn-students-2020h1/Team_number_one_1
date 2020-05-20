@@ -1,0 +1,5 @@
+API_KEY = '849841428:AAE29G8GcOPeNSrIxzQtDyJlz-5V-u6tYbY'
+#PROXY = 'https://telegg.ru/orig/bot'
+PROXY = 'socks5://95.216.33.245:10250'
+greeting = 'Hello there! Send me a photo or a sticker'
+caption = 'Let me think'

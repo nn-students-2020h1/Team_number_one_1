@@ -12,6 +12,7 @@ import csv
 import datetime
 import time
 import sqlite3
+import re
 
 from itertools import islice
 from operator import sub
@@ -37,7 +38,7 @@ __connection = None
 def get_connect():
     global __connection
     if __connection is None:
-        __connection = sqlite3.connect('base.db')
+        __connection = sqlite3.connect('base1.db')
     return __connection
 
 def init_db(force: bool = False):
@@ -47,17 +48,20 @@ def init_db(force: bool = False):
         c.execute('DROP TABLE IF EXISTS corono')
     c.execute("""
         CREATE TABLE IF NOT EXISTS corono (
-            active     INTEGER NOT NULL
+            active     INTEGER NOT NULL,
             death      INTEGER NOT NULL,
             recovered  INTEGER NOT NULL
         )
     """)
+
     conn.commit()
 
 def add_message(active: int , death: int, recovered: int):
     conn = get_connect()
     c = conn.cursor()
-    c.execute('INSERT INTO corono (active, death, recovered) VALUES (?, ?, &)', (active, death, recovered))
+    print("**")
+    c.execute('INSERT INTO corono (active, death, recovered) VALUES (?, ?, ?)', (active, death, recovered))
+
     conn.commit()
 
 """['message']['chat']['first_name']"""
@@ -74,7 +78,7 @@ def log_action(func):
             LOG_ACTIONS.append([])
             """print(datetime.datetime.now().time().minute)"""
 
-        
+
 
         LOG_ACTIONS[count[0]].append({
             'function': func.__name__,
@@ -82,7 +86,7 @@ def log_action(func):
             'message': update.message.text,
             'time':str(datetime.datetime.now().time()),
         })
-        
+
         for i in LOG_ACTIONS:
             print(i)
 
@@ -148,6 +152,10 @@ def cat_fact(update: Update, context: CallbackContext):
 
 @log_action
 def corono_stats(update: Update, context: CallbackContext):
+    #print(update.message['text'])
+    user_message = update.message['text']
+    dat = re.findall(r'((?:0[1-9]|[12][0-9]|3[01])\-(?:0[1-9]|1[012])\-(?:202[0-9]|2[1-9][0-9][0-9]))', user_message)
+    #print(user_message, dat)
     i = 0;
     text = ''
     now = datetime.datetime.now()
@@ -158,17 +166,29 @@ def corono_stats(update: Update, context: CallbackContext):
     if month < 10:
         month = f"0{now.month}"
 
-    r = requests.get(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/{month}-{day}-{now.year}.csv')
+    #print(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/'f'{month}-{day}-{now.year}.csv')
+    if dat:
+        r = requests.get(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/'f'{dat[0]}.csv')
+        text += f"{dat[0]}\n"
+        print("++++")
+    else:
+        r = requests.get(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/'f'{month}-{day}-{now.year}.csv')
+        text += f'{month}-{day}-{now.year}\n'
+        print("*****")
+
+
     if r.status_code == 404:
         day = now.day-1
         if day < 10:
             day = f"0{now.day-1}"
 
-        r = requests.get(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/{month}-{day}-{now.year}.csv')
-    text=f"{month}-{day}-{now.year}\n"
+        if dat:
+            r = requests.get(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/'f'{dat[0]}.csv')
+        else:
+            r = requests.get(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/'f'{month}-{day}-{now.year}.csv')
 
-    print("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/03-26-2020.csv")
-    print(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/{month}-{day}-{now.year}.csv')
+    #print("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/03-26-2020.csv")
+    #print(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/{month}-{day}-{now.year}.csv')
     with open('korona_v.csv', 'w', newline='') as csvfile:
         csvfile.write(r.text)
     with open('korona_v.csv', 'r') as file:
@@ -187,7 +207,7 @@ def request_covid(i=0):
 
         r = requests.get(
             f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/{data}.csv')
-
+        #print(f'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_daily_reports/{data}.csv')
         if r.status_code == 200:
             break
         i += 1
@@ -250,25 +270,30 @@ def corona_details(update: Update, context: CallbackContext):
     new_death = CovidAnalitic.contrast_day('Deaths')
     new_recovered = CovidAnalitic.contrast_day('Recovered')
 
-    init_db()
-    add_message(active=new_active,death=new_death,recovered=new_recovered)
 
     text = 'Мировая статистика за последние сутки:\n'
 
     sum = 0
     for i in new_active:
         sum += i['Parametr']
+    active_save = sum
     text += 'Новые заражённые: {}\n'.format(sum)
     sum = 0
     for i in new_death:
         sum += i['Parametr']
+    death_save = sum
     text += 'Смертей: {}\n'.format(sum)
     sum = 0
     for i in new_recovered:
         sum += i['Parametr']
+    recovered_save = sum
     text += 'Выздоровевших: {}\n'.format(sum)
     update.message.reply_text(text)
 
+    init_db()
+    print("***")
+    print(active_save, death_save, recovered_save)
+    add_message(active=active_save, death=death_save, recovered=recovered_save)
 
 
 @log_action
@@ -294,24 +319,53 @@ def error(update: Update, context: CallbackContext):
     logger.warning(f'Update {update} caused error {context.error}')
 
 
-def main():
-    # bot = Bot(
-    #     token=TOKEN,
-    #     base_url=PROXY,  # delete it if connection via VPN
-    # )
-    # updater = Updater(bot=bot, use_context=True)
+import config
+import image
 
-    # Connect via socks proxy
+def photo(update, context):
+
+    context.bot.send_message(chat_id=update.effective_message.chat_id, text=config.caption)
+    photo_bytes = update.message.photo[-1].get_file().download_as_bytearray()
+
+    msg = context.bot.send_photo(chat_id=update.effective_message.chat_id, photo=image.generate_image(photo_bytes))
+
+
+def sticker(update, context):
+
+    if (not update.message.sticker.is_animated):
+        context.bot.send_message(chat_id=update.effective_message.chat_id, text=config.caption)
+        sticker_bytes = update.message.sticker.get_file().download_as_bytearray()
+
+        msg = context.bot.send_photo(chat_id=update.effective_message.chat_id,
+                                     photo=image.generate_image(sticker_bytes))
+
+
+def main():
+
+    #bot = Bot(
+    #    token=TOKEN,
+    #    base_url=PROXY,
+    #)
+    #updater = Updater(bot=bot, use_context=True)
+
     REQUEST_KWARGS = {
-        'proxy_url': PROXY,
-        # Optional, if you need authentication:
-        # 'urllib3_proxy_kwargs': {
-        #     'username': 'name',
-        #     'password': 'passwd',
-        # }
+        'proxy_url': 'socks5://54.39.16.26:59374'
     }
 
-    updater = Updater(TOKEN, request_kwargs=REQUEST_KWARGS, use_context=True)
+    bot = Bot(
+        token=config.API_KEY,
+        base_url=config.PROXY,
+    )
+
+    updater = Updater(config.API_KEY, request_kwargs=REQUEST_KWARGS, use_context=True)
+
+    dp = updater.dispatcher
+
+    photo_handler = MessageHandler(Filters.photo, photo)
+    dp.add_handler(photo_handler)
+
+    sticker_handler = MessageHandler(Filters.sticker, sticker)
+    dp.add_handler(sticker_handler)
 
     # on different commands - answer in Telegram
     updater.dispatcher.add_handler(CommandHandler('start', start))
